@@ -3,8 +3,12 @@ const app = express();
 import cors from 'cors';
 import mysql from 'mysql2';
 import bcrypt from 'bcrypt';
+import multer, { Multer } from 'multer';
+
 
 const saltRounds = 10;
+
+const upload = multer({ dest: 'uploads/' });
 
 const db = mysql.createPool({
   host: 'localhost',
@@ -81,53 +85,86 @@ app.post('/login', (req, res) => {
 }); 
 
 app.get('/produtos', (req, res) => {
-  db.query('SELECT * FROM produtos', (err, result) => {
-    if (err) {
-      return res.status(500).send(err.message);
-    }
-    return res.json(result);
-  });
-});
-
-app.post('/produtos', (req, res) => {
-  const { nome, descrição, valor, quantidade } = req.body;
-  db.query(
-    'INSERT INTO produtos (nome, descrição, valor, quantidade) VALUES (?, ?, ?, ?)',
-    [nome, descrição, valor, quantidade],
-    (err, result) => {
+    db.query('SELECT * FROM produtos', (err, result) => {
       if (err) {
         return res.status(500).send(err.message);
+      }
+      return res.json(result);
+    });
+  });
+  
+  app.post('/produtos', upload.single('imagem'), (req, res) => {
+    const { nome, descricao, valor, quantidade } = req.body;
+    const imagemPath = req.file ? req.file.path : null;
+  
+    if (!nome || !descricao || !valor || !quantidade || !imagemPath) {
+      return res.status(400).send({ error: 'Todos os campos são obrigatórios.' });
+    }
+  
+    const insertQuery = 'INSERT INTO produtos (nome, descricao, valor, quantidade, imagem) VALUES (?, ?, ?, ?, ?)';
+    const params = [nome, descricao, valor, quantidade, imagemPath];
+  
+    db.query(insertQuery, params, (err, result) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).send({ error: 'Erro ao adicionar o produto.' });
       }
       return res.send({ msg: 'Produto adicionado com sucesso!' });
+    });
+  });
+  
+  app.put('/produtos/:nome', upload.single('imagem'), (req, res) => {
+    const productName = decodeURIComponent(req.params.nome);
+    const { descricao, valor, quantidade } = req.body;
+    const imagemPath = req.file ? req.file.path : null;
+  
+    if (!descricao && !valor && !quantidade && !imagemPath) {
+      return res.status(400).send({ error: 'Nenhum dado foi modificado.' });
     }
-  );
-});
-
-app.put('/produtos/:nome', (req, res) => {
-  const productName = req.params.nome;
-  const { descrição, valor, quantidade } = req.body;
-  db.query(
-    'UPDATE produtos SET descrição = ?, valor = ?, quantidade = ? WHERE nome = ?',
-    [descrição, valor, quantidade, productName],
-    (err, result) => {
+  
+    let updateFields = [];
+    let params = [];
+  
+    if (descricao) {
+      updateFields.push('descricao = ?');
+      params.push(descricao);
+    }
+    if (valor) {
+      updateFields.push('valor = ?');
+      params.push(valor);
+    }
+    if (quantidade) {
+      updateFields.push('quantidade = ?');
+      params.push(quantidade);
+    }
+    if (imagemPath) {
+      updateFields.push('imagem = ?');
+      params.push(imagemPath);
+    }
+  
+    params.push(productName);
+  
+    const updateQuery = `UPDATE produtos SET ${updateFields.join(', ')} WHERE nome = ?`;
+  
+    db.query(updateQuery, params, (err, result) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).send({ error: 'Erro ao atualizar o produto.' });
+      }
+      return res.send({ msg: 'Produto atualizado com sucesso!' });
+    });
+  });
+  
+  app.delete('/produtos/:nome', (req, res) => {
+    const productName = req.params.nome;
+    db.query('DELETE FROM produtos WHERE nome = ?', [productName], (err, result) => {
       if (err) {
         return res.status(500).send(err.message);
       }
-      return res.send({ msg: 'Produto atualizado com sucesso!' });
-    }
-  );
-});
-
-app.delete('/produtos/:nome', (req, res) => {
-  const productName = req.params.nome;
-  db.query('DELETE FROM produtos WHERE nome = ?', [productName], (err, result) => {
-    if (err) {
-      return res.status(500).send(err.message);
-    }
-    return res.send({ msg: 'Produto excluído com sucesso!' });
+      return res.send({ msg: 'Produto excluído com sucesso!' });
+    });
   });
-});
-
-app.listen(5050, () => {
-  console.log('Rodando na porta 5050');
-});
+  
+  app.listen(5050, () => {
+    console.log('Rodando na porta 5050');
+  });
